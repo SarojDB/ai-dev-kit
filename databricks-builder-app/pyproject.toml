@@ -8,7 +8,7 @@ include = ["server*"]
 exclude = ["client*", "tests*", "scripts*"]
 
 [project]
-name = "databricks-mcp-app"
+name = "databricks-builder-app"
 version = "0.1.0"
 description = "Claude Code MCP Application"
 readme = "README.md"

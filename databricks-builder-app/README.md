@@ -1,4 +1,4 @@
-# Databricks AI Dev Kit
+# Databricks Builder App
 
 A web application that provides a Claude Code agent interface with integrated Databricks tools. Users interact with Claude through a chat interface, and the agent can execute SQL queries, manage pipelines, upload files, and more on their Databricks workspace.
 
@@ -261,7 +261,7 @@ uvicorn server.app:app --host 0.0.0.0 --port 8000
 ## Project Structure
 
 ```
-databricks-mcp-app/
+databricks-builder-app/
 ├── server/                 # FastAPI backend
 │   ├── app.py             # Main FastAPI app
 │   ├── db/                # Database models and migrations

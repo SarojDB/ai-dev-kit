@@ -395,7 +395,7 @@ wheels = [
 ]
 
 [[package]]
-name = "databricks-mcp-app"
+name = "databricks-builder-app"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

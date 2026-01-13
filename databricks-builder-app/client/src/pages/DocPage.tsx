@@ -111,7 +111,7 @@ function OverviewSection() {
           </li>
           <li className="flex items-start gap-3">
             <Sparkles className="h-5 w-5 text-[var(--color-accent-primary)] mt-0.5 flex-shrink-0" />
-            <span><code className="font-mono text-sm bg-[var(--color-background)] px-1.5 py-0.5 rounded">databricks-mcp-app/</code> - Claude Code in a web UI to deploy Databricks resources</span>
+            <span><code className="font-mono text-sm bg-[var(--color-background)] px-1.5 py-0.5 rounded">databricks-builder-app/</code> - Claude Code in a web UI to deploy Databricks resources</span>
           </li>
         </ul>
       </div>
@@ -209,7 +209,7 @@ function OverviewSection() {
             <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Sparkles className="h-5 w-5 text-orange-400" />
-                <h3 className="font-semibold text-[var(--color-text-heading)] font-mono">databricks-mcp-app/</h3>
+                <h3 className="font-semibold text-[var(--color-text-heading)] font-mono">databricks-builder-app/</h3>
               </div>
               <p className="text-sm text-[var(--color-text-muted)] mb-3">
                 Claude Code in a UI - an agent to work on and deploy Databricks resources
@@ -565,7 +565,7 @@ function AppSection() {
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-[var(--color-text-heading)]">
-          databricks-mcp-app
+          databricks-builder-app
         </h1>
         <p className="mt-2 text-lg text-[var(--color-text-muted)]">
           Claude Code in a web UI - an agent to work on and deploy Databricks resources
