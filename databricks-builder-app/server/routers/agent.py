@@ -23,7 +23,7 @@ from ..services.agent import get_project_directory, stream_agent_response
 from ..services.backup_manager import mark_for_backup
 from ..services.storage import ConversationStorage, ProjectStorage
 from ..services.title_generator import generate_title_async
-from ..services.user import get_current_user, get_current_token, get_workspace_url
+from ..services.user import get_current_user, get_current_token, get_fmapi_token, get_workspace_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -87,7 +87,8 @@ async def invoke_agent(request: Request, body: InvokeAgentRequest):
 
     # Get current user and Databricks auth
     user_email = await get_current_user(request)
-    user_token = await get_current_token(request)
+    # Use FMAPI token for Claude API (Service Principal OAuth in production)
+    user_token = await get_fmapi_token(request)
     workspace_url = get_workspace_url()
 
     # Verify project exists and belongs to user
@@ -117,6 +118,8 @@ async def invoke_agent(request: Request, body: InvokeAgentRequest):
                 conversation_id=conversation_id,
                 user_email=user_email,
                 project_id=body.project_id,
+                databricks_host=workspace_url,
+                databricks_token=user_token,
             )
         )
     else:
@@ -179,13 +182,20 @@ async def invoke_agent(request: Request, body: InvokeAgentRequest):
                     stream.add_event({'type': 'text_delta', 'text': text})
 
                 elif event_type == 'text':
-                    # Complete text block - only use if we haven't received deltas
-                    # (fallback for when streaming is disabled)
-                    if not received_deltas:
-                        text = event.get('text', '')
-                        final_text += text
-                        stream.add_event({'type': 'text', 'text': text})
-                    # If we received deltas, ignore this to avoid duplication
+                    # Complete text block - accumulate all text blocks
+                    # Claude sends multiple text blocks when there are tool calls in between
+                    # We track received_deltas to know if we should also emit text events
+                    # (if deltas are being used, the client already has the text token-by-token)
+                    text = event.get('text', '')
+                    if text:
+                        if not received_deltas:
+                            # No deltas received, so send complete text blocks to client
+                            final_text += text
+                            stream.add_event({'type': 'text', 'text': text})
+                        # Note: If received_deltas is True, we skip sending 'text' events
+                        # because the client already received the same content via 'text_delta'
+                        # BUT we still need to track final_text for persistence
+                        # The text_delta handler already accumulates to final_text
 
                 elif event_type == 'thinking':
                     stream.add_event({
@@ -523,16 +533,7 @@ async def get_conversation_executions(
             detail=f'Project {project_id} not found'
         )
 
-    # Get executions from database
-    exec_storage = ExecutionStorage(user_email, project_id, conversation_id)
-
-    # Get active execution (if any)
-    active = await exec_storage.get_active()
-
-    # Get recent executions
-    recent = await exec_storage.get_recent(limit=5)
-
-    # Also check in-memory streams for this conversation
+    # First check in-memory streams for this conversation (always works)
     stream_manager = get_stream_manager()
     in_memory_active = None
     async with stream_manager._lock:
@@ -552,6 +553,18 @@ async def get_conversation_executions(
                     'created_at': None,
                 }
                 break
+
+    # Try to get executions from database (may fail if table doesn't exist yet)
+    active = None
+    recent = []
+    try:
+        exec_storage = ExecutionStorage(user_email, project_id, conversation_id)
+        active = await exec_storage.get_active()
+        recent = await exec_storage.get_recent(limit=5)
+    except Exception as e:
+        # Table might not exist yet (migration pending) - log and continue
+        # In-memory streams will still work
+        logger.warning(f'Failed to query executions table (may not exist yet): {e}')
 
     return {
         'active': (

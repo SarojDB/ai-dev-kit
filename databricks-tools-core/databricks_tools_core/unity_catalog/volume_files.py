@@ -44,12 +44,13 @@ class VolumeDownloadResult:
     error: Optional[str] = None
 
 
-def list_volume_files(volume_path: str) -> List[VolumeFileInfo]:
+def list_volume_files(volume_path: str, max_results: Optional[int] = None) -> List[VolumeFileInfo]:
     """
     List files and directories in a volume path.
 
     Args:
         volume_path: Path in volume (e.g., "/Volumes/catalog/schema/volume/folder")
+        max_results: Optional maximum number of results to return (None = no limit)
 
     Returns:
         List of VolumeFileInfo objects
@@ -77,6 +78,9 @@ def list_volume_files(volume_path: str) -> List[VolumeFileInfo]:
             file_size=entry.file_size,
             last_modified=entry.last_modified.isoformat() if entry.last_modified else None
         ))
+        # Early exit if we've hit the limit
+        if max_results is not None and len(results) >= max_results:
+            break
 
     return results
 

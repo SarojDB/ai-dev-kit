@@ -17,8 +17,9 @@ logging.basicConfig(
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 
 from .db import is_postgres_configured, is_dynamic_token_mode, run_migrations, init_database, start_token_refresh, stop_token_refresh
@@ -126,12 +127,40 @@ app.include_router(agent_router, prefix=API_PREFIX, tags=['agent'])
 app.include_router(skills_router, prefix=API_PREFIX, tags=['skills'])
 
 # Production: Serve Vite static build
-build_path = Path('.') / 'client/out'
-if build_path.exists():
+# Check multiple possible locations for the frontend build
+_app_root = Path(__file__).parent.parent  # server/app.py -> app root
+_possible_build_paths = [
+  _app_root / 'client/out',  # Standard location relative to app root
+  Path('.') / 'client/out',  # Relative to working directory
+  Path('/app/python/source_code') / 'client/out',  # Databricks Apps location
+]
+
+build_path = None
+for path in _possible_build_paths:
+  if path.exists():
+    build_path = path
+    break
+
+if build_path:
   logger.info(f'Serving static files from {build_path}')
+  index_html = build_path / 'index.html'
+
+  # SPA fallback: catch 404s from static files and serve index.html for client-side routing
+  # This must be defined BEFORE mounting static files
+  @app.exception_handler(StarletteHTTPException)
+  async def spa_fallback(request: Request, exc: StarletteHTTPException):
+    # Only handle 404s for non-API routes
+    if exc.status_code == 404 and not request.url.path.startswith('/api'):
+      return FileResponse(index_html)
+    # For API 404s or other errors, return JSON
+    return JSONResponse(
+      status_code=exc.status_code,
+      content={'detail': exc.detail},
+    )
+
   app.mount('/', StaticFiles(directory=str(build_path), html=True), name='static')
 else:
   logger.warning(
-    f'Build directory {build_path} not found. '
+    f'Build directory not found in any of: {[str(p) for p in _possible_build_paths]}. '
     'In development, run Vite separately: cd client && npm run dev'
   )

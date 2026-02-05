@@ -88,14 +88,30 @@ def _resolve_hostname(hostname: str) -> Optional[str]:
     return None
 
 
+def _has_oauth_credentials() -> bool:
+    """Check if OAuth credentials (SP) are configured in environment."""
+    import os
+    return bool(os.environ.get('DATABRICKS_CLIENT_ID') and os.environ.get('DATABRICKS_CLIENT_SECRET'))
+
+
 def _get_workspace_client():
     """Get Databricks WorkspaceClient for token generation.
 
+    In Databricks Apps, explicitly uses OAuth M2M to avoid conflicts with other auth methods.
     Returns None if not running in a Databricks environment.
     """
     try:
+        import os
         from databricks.sdk import WorkspaceClient
 
+        if _has_oauth_credentials():
+            # Explicitly configure OAuth M2M to prevent auth conflicts
+            return WorkspaceClient(
+                host=os.environ.get('DATABRICKS_HOST', ''),
+                client_id=os.environ.get('DATABRICKS_CLIENT_ID', ''),
+                client_secret=os.environ.get('DATABRICKS_CLIENT_SECRET', ''),
+            )
+        # Development mode - use default SDK auth
         return WorkspaceClient()
     except Exception as e:
         logger.debug(f"Could not create WorkspaceClient: {e}")
@@ -501,6 +517,7 @@ def run_migrations() -> None:
         return
 
     import logging
+    from pathlib import Path
 
     from alembic import command
     from alembic.config import Config
@@ -509,7 +526,39 @@ def run_migrations() -> None:
     logger.info("Running database migrations...")
 
     try:
-        alembic_cfg = Config("alembic.ini")
+        # Find the app root directory (where alembic.ini lives)
+        # This file is at server/db/database.py, so app root is 2 levels up
+        app_root = Path(__file__).parent.parent.parent
+
+        # Check multiple possible locations for alembic.ini
+        possible_paths = [
+            app_root / "alembic.ini",  # Standard location
+            Path("/app/python/source_code") / "alembic.ini",  # Databricks Apps
+            Path(".") / "alembic.ini",  # Current directory fallback
+        ]
+
+        alembic_ini_path = None
+        for path in possible_paths:
+            if path.exists():
+                alembic_ini_path = path
+                break
+
+        if not alembic_ini_path:
+            logger.warning(
+                f"alembic.ini not found in any of: {[str(p) for p in possible_paths]}. "
+                "Skipping migrations."
+            )
+            return
+
+        logger.info(f"Using alembic config from: {alembic_ini_path}")
+
+        alembic_cfg = Config(str(alembic_ini_path))
+
+        # Set script_location to absolute path to avoid working directory issues
+        alembic_dir = alembic_ini_path.parent / "alembic"
+        if alembic_dir.exists():
+            alembic_cfg.set_main_option("script_location", str(alembic_dir))
+
         command.upgrade(alembic_cfg, "head")
         logger.info("Database migrations completed")
     except Exception as e:

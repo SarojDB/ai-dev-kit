@@ -15,18 +15,28 @@ from ..server import mcp
 
 
 @mcp.tool
-def list_volume_files(volume_path: str) -> List[Dict[str, Any]]:
+def list_volume_files(volume_path: str, max_results: int = 500) -> Dict[str, Any]:
     """
     List files and directories in a Unity Catalog volume path.
 
     Args:
         volume_path: Path in volume (e.g., "/Volumes/catalog/schema/volume/folder")
+        max_results: Maximum number of results to return (default: 500, max: 1000)
 
     Returns:
-        List of file/directory info with name, path, is_directory, file_size, last_modified
+        Dictionary with 'files' list and 'truncated' boolean indicating if results were limited
     """
-    results = _list_volume_files(volume_path)
-    return [
+    # Cap max_results to prevent buffer overflow (1MB JSON limit)
+    max_results = min(max_results, 1000)
+
+    # Fetch one extra to detect if there are more results
+    results = _list_volume_files(volume_path, max_results=max_results + 1)
+    truncated = len(results) > max_results
+
+    # Only return up to max_results
+    results = results[:max_results]
+
+    files = [
         {
             "name": r.name,
             "path": r.path,
@@ -36,6 +46,13 @@ def list_volume_files(volume_path: str) -> List[Dict[str, Any]]:
         }
         for r in results
     ]
+
+    return {
+        "files": files,
+        "returned_count": len(files),
+        "truncated": truncated,
+        "message": f"Results limited to {len(files)} items. Use a more specific path or subdirectory to see more files." if truncated else None,
+    }
 
 
 @mcp.tool
