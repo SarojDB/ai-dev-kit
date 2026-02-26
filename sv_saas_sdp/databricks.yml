@@ -1,0 +1,52 @@
+bundle:
+  name: sv_saas_sdp
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog name
+    default: sv_ai_builder_workspace_catalog
+
+  bronze_schema:
+    description: Bronze layer schema
+    default: saas_bronze
+
+  silver_schema:
+    description: Silver layer schema
+    default: saas_silver
+
+  gold_schema:
+    description: Gold layer schema
+    default: saas_gold
+
+  raw_data_path:
+    description: Path to raw SaaS JSON data in UC volume
+    default: /Volumes/sv_ai_builder_workspace_catalog/aibuilder_saas_demo/saas_demo
+
+  schema_location_base:
+    description: Base path for Auto Loader schema metadata (must be a separate volume from raw data)
+    default: /Volumes/sv_ai_builder_workspace_catalog/aibuilder_saas_demo/sv_saas_sdp_metadata/schemas
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      host: https://fevm-sv-ai-builder-workspace.cloud.databricks.com
+      profile: DEFAULT
+    variables:
+      bronze_schema: saas_bronze_dev
+      silver_schema: saas_silver_dev
+      gold_schema: saas_gold_dev
+
+  prod:
+    mode: production
+    workspace:
+      host: https://fevm-sv-ai-builder-workspace.cloud.databricks.com
+      profile: DEFAULT
+    variables:
+      bronze_schema: saas_bronze
+      silver_schema: saas_silver
+      gold_schema: saas_gold
