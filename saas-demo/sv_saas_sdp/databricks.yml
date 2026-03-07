@@ -7,46 +7,50 @@ include:
 variables:
   catalog:
     description: Unity Catalog catalog name
-    default: sv_ai_builder_workspace_catalog
+    default: aibuilder_saas_demo
 
   bronze_schema:
     description: Bronze layer schema
-    default: saas_bronze
+    default: bronze_dev
 
   silver_schema:
     description: Silver layer schema
-    default: saas_silver
+    default: silver_dev
 
   gold_schema:
     description: Gold layer schema
-    default: saas_gold
+    default: gold_dev
 
   raw_data_path:
-    description: Path to raw SaaS JSON data in UC volume
-    default: /Volumes/sv_ai_builder_workspace_catalog/aibuilder_saas_demo/saas_demo
+    description: Path to raw SaaS Parquet data in UC volume
+    default: /Volumes/aibuilder_saas_demo/raw_data/saas_data
 
   schema_location_base:
-    description: Base path for Auto Loader schema metadata (must be a separate volume from raw data)
-    default: /Volumes/sv_ai_builder_workspace_catalog/aibuilder_saas_demo/sv_saas_sdp_metadata/schemas
+    description: Base path for Auto Loader schema metadata (separate volume from raw data)
+    default: /Volumes/aibuilder_saas_demo/raw_data/sv_saas_sdp_metadata/schemas
 
 targets:
   dev:
     default: true
     mode: development
     workspace:
-      host: https://fevm-sv-ai-builder-workspace.cloud.databricks.com
-      profile: DEFAULT
+      host: https://dbc-8debdea9-18d5.cloud.databricks.com
+      profile: databricks_oneenv
     variables:
-      bronze_schema: saas_bronze_dev
-      silver_schema: saas_silver_dev
-      gold_schema: saas_gold_dev
+      catalog: aibuilder_saas_demo
+      bronze_schema: bronze_dev
+      silver_schema: silver_dev
+      gold_schema: gold_dev
 
   prod:
     mode: production
     workspace:
-      host: https://fevm-sv-ai-builder-workspace.cloud.databricks.com
-      profile: DEFAULT
+      host: https://dbc-8debdea9-18d5.cloud.databricks.com
+      profile: databricks_oneenv
+      root_path: /Workspace/Users/saroj.venkatesh@databricks.com/.bundle/${bundle.name}/${bundle.target}
     variables:
-      bronze_schema: saas_bronze
-      silver_schema: saas_silver
-      gold_schema: saas_gold
+      catalog: aibuilder_saas_demo
+      bronze_schema: prod_bronze
+      silver_schema: prod_silver
+      gold_schema: prod_gold
+      schema_location_base: /Volumes/aibuilder_saas_demo/raw_data/sv_saas_sdp_metadata/schemas_prod

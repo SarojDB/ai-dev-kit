@@ -1,321 +1,388 @@
-"""
-Generate synthetic SaaS company internal data.
-Datasets: users (10k), orders (30k), events (50k)
-Storage: sv_ai_builder_workspace_catalog.aibuilder_saas_demo.saas_demo (NDJSON)
-"""
+"""Generate synthetic SaaS data: users, orders, events -> Unity Catalog Volume."""
+# Install required libraries first
+import subprocess
+subprocess.run(["pip", "install", "faker", "holidays", "-q"], check=True)
+
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from faker import Faker
-from pyspark.sql import SparkSession
-import json, os
+import holidays
+import uuid
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-CATALOG     = "sv_ai_builder_workspace_catalog"
-SCHEMA      = "aibuilder_saas_demo"
-VOLUME      = "saas_demo"
+CATALOG     = "aibuilder_saas_demo"
+SCHEMA      = "raw_data"
+VOLUME      = "saas_data"
 VOLUME_PATH = f"/Volumes/{CATALOG}/{SCHEMA}/{VOLUME}"
 
 N_USERS  = 10_000
 N_ORDERS = 30_000
 N_EVENTS = 50_000
 
-# Orders span last 3 months
-NOW             = datetime.utcnow()
-ORDERS_END      = NOW
-ORDERS_START    = NOW - timedelta(days=90)
+# Orders span 3 months; events span the last 6 hours from now
+NOW        = datetime.now()
+ORDER_END  = NOW.replace(hour=0, minute=0, second=0, microsecond=0)
+ORDER_START = ORDER_END - timedelta(days=90)
+EVENT_END  = NOW
+EVENT_START = NOW - timedelta(hours=6)
 
-# Events span a single 6-hour window (today)
-EVENTS_END      = NOW
-EVENTS_START    = NOW - timedelta(hours=6)
-
+US_HOLIDAYS = holidays.US(years=[ORDER_START.year, ORDER_END.year])
 SEED = 42
+
+# =============================================================================
+# SETUP
+# =============================================================================
 np.random.seed(SEED)
 Faker.seed(SEED)
 fake = Faker()
 
+from pyspark.sql import SparkSession
 spark = SparkSession.builder.getOrCreate()
 
 # =============================================================================
-# CREATE INFRASTRUCTURE
+# INFRASTRUCTURE
 # =============================================================================
 print("Creating catalog / schema / volume if needed...")
-spark.sql(f"USE CATALOG {CATALOG}")
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
-spark.sql(f"CREATE VOLUME IF NOT EXISTS {SCHEMA}.{VOLUME}")
-print(f"  Volume path: {VOLUME_PATH}")
+spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
+spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.{SCHEMA}.{VOLUME}")
+print(f"  Volume ready: {VOLUME_PATH}")
 
 # =============================================================================
-# HELPER FUNCTIONS
+# SHARED LOOKUPS
 # =============================================================================
-def random_ts(start: datetime, end: datetime) -> str:
-    delta = (end - start).total_seconds()
-    return (start + timedelta(seconds=float(np.random.uniform(0, delta)))).strftime(
-        "%Y-%m-%dT%H:%M:%S.%f"
-    )[:-3] + "Z"
-
-def updated_ts(created: str, max_days: int = 30) -> str:
-    dt = datetime.strptime(created, "%Y-%m-%dT%H:%M:%S.%fZ")
-    offset = timedelta(seconds=float(np.random.exponential(scale=max_days * 86400 * 0.3)))
-    updated = min(dt + offset, NOW)
-    return updated.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-def write_ndjson(records: list, path: str):
-    """Write list of dicts to newline-delimited JSON via Spark."""
-    df = spark.createDataFrame(pd.DataFrame(records))
-    df.coalesce(1).write.mode("overwrite").json(path)
-    print(f"  Saved {len(records):,} records → {path}")
-
-# =============================================================================
-# REFERENCE LOOKUPS
-# =============================================================================
-PRODUCT_TYPES = [
-    "Analytics Platform", "Data Pipeline", "ML Workbench",
-    "BI Dashboard", "API Gateway", "Storage Connector",
-    "Security Suite", "Collaboration Hub",
-]
-PRODUCT_WEIGHTS = [0.20, 0.18, 0.15, 0.14, 0.12, 0.09, 0.07, 0.05]
-
-SUBSCRIPTION_TIERS = ["Free", "Starter", "Professional", "Business", "Enterprise"]
-TIER_WEIGHTS       = [0.30, 0.25, 0.22, 0.15, 0.08]
-
-TIER_PRICE_PARAMS = {
-    "Free":         (None, None),
-    "Starter":      (3.2, 0.4),   # lognormal → ~$25 median
-    "Professional": (4.3, 0.5),   # → ~$74 median
-    "Business":     (5.5, 0.5),   # → ~$245 median
-    "Enterprise":   (6.5, 0.5),   # → ~$665 median
-}
-
-OS_TYPES    = ["Windows", "macOS", "Linux", "iOS", "Android", "ChromeOS"]
-OS_WEIGHTS  = [0.30, 0.25, 0.18, 0.12, 0.10, 0.05]
-BROWSERS    = ["Chrome", "Firefox", "Safari", "Edge", "Opera"]
-BR_WEIGHTS  = [0.50, 0.18, 0.20, 0.09, 0.03]
-COUNTRIES   = ["US", "GB", "IN", "DE", "CA", "AU", "FR", "SG", "BR", "JP"]
-CTRY_WEIGHTS= [0.35, 0.10, 0.12, 0.08, 0.07, 0.06, 0.06, 0.05, 0.06, 0.05]
-
-EVENT_TYPES = [
-    "page_view", "button_click", "search", "login", "logout",
-    "feature_activated", "feature_deactivated", "api_call",
-    "file_upload", "file_download", "dashboard_opened",
-    "report_generated", "error_encountered", "session_start",
-    "session_end", "settings_changed", "invite_sent",
-    "export_triggered", "notification_dismissed", "onboarding_step_completed",
-]
-EVENT_WEIGHTS = [
-    0.18, 0.14, 0.10, 0.06, 0.04,
-    0.06, 0.02, 0.08,
-    0.03, 0.04, 0.06,
-    0.03, 0.03, 0.05,
-    0.04, 0.02, 0.02,
-    0.03, 0.02, 0.02,
-]
-EVENT_WEIGHTS = [w / sum(EVENT_WEIGHTS) for w in EVENT_WEIGHTS]  # normalize to 1.0
-
-# Resources: one resource_id per product_type
-RESOURCE_IDS = {pt: f"RES-{i:04d}" for i, pt in enumerate(PRODUCT_TYPES)}
+SUBSCRIPTION_TIERS = ["Free", "Starter", "Professional", "Enterprise"]
+TIER_WEIGHTS       = [0.45, 0.30, 0.18, 0.07]
+PRODUCT_TYPES      = ["API", "Dashboard", "Analytics", "Automation"]
+PRODUCT_WEIGHTS    = [0.35, 0.25, 0.22, 0.18]
+COUNTRIES          = ["US", "UK", "DE", "FR", "CA", "AU", "IN", "BR", "SG", "JP"]
+COUNTRY_WEIGHTS    = [0.38, 0.12, 0.09, 0.07, 0.07, 0.06, 0.06, 0.05, 0.05, 0.05]
+DEVICES            = ["desktop", "mobile", "tablet"]
+DEVICE_WEIGHTS     = [0.62, 0.30, 0.08]
+BROWSERS           = ["Chrome", "Firefox", "Safari", "Edge", "Opera"]
+BROWSER_WEIGHTS    = [0.65, 0.10, 0.13, 0.09, 0.03]
+OS_LIST            = ["Windows", "macOS", "Linux", "iOS", "Android"]
+OS_WEIGHTS         = [0.45, 0.22, 0.08, 0.13, 0.12]
+ROLES              = ["admin", "developer", "analyst", "viewer", "manager"]
+ROLE_WEIGHTS       = [0.08, 0.30, 0.25, 0.27, 0.10]
+APP_VERSIONS       = ["2.4.1", "2.4.0", "2.3.5", "2.3.2", "2.2.9"]
+APP_VERSION_WEIGHTS= [0.45, 0.25, 0.15, 0.10, 0.05]
 
 # =============================================================================
-# 1. USERS  (master table)
+# 1. USERS  (10,000 records)
 # =============================================================================
 print(f"\nGenerating {N_USERS:,} users...")
 
-user_records = []
-for i in range(N_USERS):
-    uid = f"USR-{i:06d}"
-    tier = np.random.choice(SUBSCRIPTION_TIERS, p=TIER_WEIGHTS)
-    country = np.random.choice(COUNTRIES, p=CTRY_WEIGHTS)
-    created = random_ts(ORDERS_START - timedelta(days=180), ORDERS_START)
+user_ids     = [f"USR-{i:05d}" for i in range(N_USERS)]
+tiers        = np.random.choice(SUBSCRIPTION_TIERS, N_USERS, p=TIER_WEIGHTS)
+products     = np.random.choice(PRODUCT_TYPES, N_USERS, p=PRODUCT_WEIGHTS)
+countries    = np.random.choice(COUNTRIES, N_USERS, p=COUNTRY_WEIGHTS)
+devices      = np.random.choice(DEVICES, N_USERS, p=DEVICE_WEIGHTS)
+browsers     = np.random.choice(BROWSERS, N_USERS, p=BROWSER_WEIGHTS)
+os_arr       = np.random.choice(OS_LIST, N_USERS, p=OS_WEIGHTS)
+roles        = np.random.choice(ROLES, N_USERS, p=ROLE_WEIGHTS)
+app_versions = np.random.choice(APP_VERSIONS, N_USERS, p=APP_VERSION_WEIGHTS)
 
-    user_records.append({
-        "user_id":            uid,
-        "email":              fake.email(),
-        "full_name":          fake.name(),
-        "company":            fake.company(),
-        "country":            country,
-        "city":               fake.city(),
-        "subscription_tier":  tier,
-        "product_type":       np.random.choice(PRODUCT_TYPES, p=PRODUCT_WEIGHTS),
-        "os":                 np.random.choice(OS_TYPES,    p=OS_WEIGHTS),
-        "browser":            np.random.choice(BROWSERS,    p=BR_WEIGHTS),
-        "device_type":        np.random.choice(["desktop", "mobile", "tablet"], p=[0.65, 0.25, 0.10]),
-        "app_version":        f"{np.random.randint(3,6)}.{np.random.randint(0,12)}.{np.random.randint(0,9)}",
-        "is_active":          bool(np.random.choice([True, False], p=[0.88, 0.12])),
-        "mfa_enabled":        bool(np.random.choice([True, False], p=[0.55, 0.45])),
-        "role":               np.random.choice(["admin","editor","viewer","analyst"], p=[0.10,0.25,0.40,0.25]),
-        "created_timestamp":  created,
-        "updated_timestamp":  updated_ts(created, max_days=90),
-    })
-
-users_df = pd.DataFrame(user_records)
-print(f"  Tier distribution:\n{users_df['subscription_tier'].value_counts().to_string()}")
-
-# Build lookup maps
-user_ids         = users_df["user_id"].tolist()
-user_tier_map    = dict(zip(users_df["user_id"], users_df["subscription_tier"]))
-user_product_map = dict(zip(users_df["user_id"], users_df["product_type"]))
-
-# Weighted sampling — paid tiers generate more activity
-activity_weights = users_df["subscription_tier"].map(
-    {"Free": 0.5, "Starter": 1.0, "Professional": 2.0, "Business": 3.5, "Enterprise": 6.0}
+# Account age: Enterprise users tend to be older accounts
+account_age_days = np.where(
+    tiers == "Enterprise", np.random.randint(365, 1461, N_USERS),
+    np.where(tiers == "Professional", np.random.randint(180, 730, N_USERS),
+    np.where(tiers == "Starter", np.random.randint(30, 365, N_USERS),
+             np.random.randint(1, 180, N_USERS)))
 )
-user_activity_weights = (activity_weights / activity_weights.sum()).tolist()
 
-write_ndjson(user_records, f"{VOLUME_PATH}/users")
+created_ts = [
+    NOW - timedelta(days=int(age), hours=np.random.randint(0, 24))
+    for age in account_age_days
+]
+
+users_pdf = pd.DataFrame({
+    "user_id":          user_ids,
+    "full_name":        [fake.name() for _ in range(N_USERS)],
+    "email":            [fake.email() for _ in range(N_USERS)],
+    "email_domain":     [fake.domain_name() for _ in range(N_USERS)],
+    "company":          [fake.company() for _ in range(N_USERS)],
+    "role":             roles,
+    "subscription_tier": tiers,
+    "product_type":     products,
+    "country":          countries,
+    "city":             [fake.city() for _ in range(N_USERS)],
+    "device_type":      devices,
+    "browser":          browsers,
+    "os":               os_arr,
+    "app_version":      app_versions,
+    "account_age_days": account_age_days,
+    "is_active":        np.random.choice([True, False], N_USERS, p=[0.88, 0.12]),
+    "is_enterprise":    tiers == "Enterprise",
+    "mfa_enabled":      np.random.choice([True, False], N_USERS, p=[0.55, 0.45]),
+    "is_valid_email":   np.random.choice([True, False], N_USERS, p=[0.97, 0.03]),
+    "created_timestamp":  created_ts,
+    "updated_timestamp":  [
+        ct + timedelta(days=np.random.randint(0, max(1, int(age))))
+        for ct, age in zip(created_ts, account_age_days)
+    ],
+})
+
+print(f"  Tier distribution:\n{users_pdf['subscription_tier'].value_counts().to_string()}")
+
+# Lookups for downstream tables
+user_ids_list   = users_pdf["user_id"].tolist()
+user_tier_map   = dict(zip(users_pdf["user_id"], users_pdf["subscription_tier"]))
+user_product_map= dict(zip(users_pdf["user_id"], users_pdf["product_type"]))
+user_country_map= dict(zip(users_pdf["user_id"], users_pdf["country"]))
+user_device_map = dict(zip(users_pdf["user_id"], users_pdf["device_type"]))
+user_browser_map= dict(zip(users_pdf["user_id"], users_pdf["browser"]))
+
+# Weighted sampling — Enterprise/Professional users generate more activity
+tier_activity_w = users_pdf["subscription_tier"].map(
+    {"Enterprise": 6.0, "Professional": 3.0, "Starter": 1.5, "Free": 1.0}
+)
+user_weights = (tier_activity_w / tier_activity_w.sum()).values
 
 # =============================================================================
-# 2. ORDERS  (references users; 3-month window, $20-$1000)
+# 2. ORDERS  (30,000 records over 90 days)
 # =============================================================================
 print(f"\nGenerating {N_ORDERS:,} orders...")
 
-order_records = []
-for i in range(N_ORDERS):
-    uid   = np.random.choice(user_ids, p=user_activity_weights)
-    tier  = user_tier_map[uid]
-    pt    = user_product_map[uid]
-    rid   = RESOURCE_IDS[pt]
+PAYMENT_METHODS = ["credit_card", "paypal", "bank_transfer", "invoice", "crypto"]
+PAYMENT_WEIGHTS = [0.55, 0.20, 0.15, 0.08, 0.02]
+ORDER_STATUSES  = ["completed", "pending", "cancelled", "refunded"]
+ORDER_STATUS_W  = [0.82, 0.08, 0.06, 0.04]
+ORDER_CATEGORIES= ["new_subscription", "renewal", "upgrade", "addon", "one_time"]
+ORDER_CAT_W     = [0.25, 0.40, 0.15, 0.12, 0.08]
 
-    # Lognormal price clipped to $20–$1000
-    mu, sigma = TIER_PRICE_PARAMS.get(tier, (4.3, 0.5))
-    if mu is None:
-        amount = round(float(np.random.uniform(20, 49)), 2)
+# Price ranges by tier ($20 to $1000)
+def sample_price(tier):
+    if tier == "Enterprise":
+        val = np.random.lognormal(6.2, 0.5)   # ~$500 median
+    elif tier == "Professional":
+        val = np.random.lognormal(5.2, 0.5)   # ~$180 median
+    elif tier == "Starter":
+        val = np.random.lognormal(4.2, 0.5)   # ~$67 median
     else:
-        raw = np.random.lognormal(mu, sigma)
-        amount = round(float(np.clip(raw, 20, 1000)), 2)
+        val = np.random.lognormal(3.4, 0.4)   # ~$30 median
+    return round(float(np.clip(val, 20, 1000)), 2)
 
-    created = random_ts(ORDERS_START, ORDERS_END)
-    qty     = int(np.random.choice([1, 2, 3, 5, 10], p=[0.60, 0.20, 0.10, 0.07, 0.03]))
+# Date distribution with weekday pattern + slight growth trend
+total_days   = (ORDER_END - ORDER_START).days
+date_range   = pd.date_range(ORDER_START, ORDER_END - timedelta(days=1), freq="D")
 
-    order_records.append({
-        "order_id":           f"ORD-{i:07d}",
-        "user_id":            uid,
-        "resource_id":        rid,
-        "product_type":       pt,
-        "subscription_tier":  tier,
-        "quantity":           qty,
-        "unit_price":         amount,
-        "total_value":        round(amount * qty, 2),
-        "currency":           "USD",
-        "status":             np.random.choice(
-                                  ["completed","pending","cancelled","refunded"],
-                                  p=[0.82, 0.10, 0.05, 0.03]),
-        "payment_method":     np.random.choice(
-                                  ["credit_card","invoice","bank_transfer","paypal"],
-                                  p=[0.55, 0.25, 0.12, 0.08]),
-        "billing_country":    np.random.choice(COUNTRIES, p=CTRY_WEIGHTS),
-        "promo_code_used":    bool(np.random.choice([True, False], p=[0.15, 0.85])),
-        "created_timestamp":  created,
-        "updated_timestamp":  updated_ts(created, max_days=14),
+def order_day_weight(d):
+    w = 1.0
+    if d.weekday() >= 5: w *= 0.55          # weekend dip
+    if d in US_HOLIDAYS: w *= 0.3           # holiday dip
+    growth = 1 + 0.4 * ((d - ORDER_START).days / total_days)  # 40% growth over 3 months
+    return max(0.05, w * growth * np.random.normal(1, 0.08))
+
+day_weights = np.array([order_day_weight(d) for d in date_range])
+day_weights /= day_weights.sum()
+
+# Sample an order date for each order
+order_days_idx  = np.random.choice(len(date_range), N_ORDERS, p=day_weights)
+order_dates     = [date_range[i].date() for i in order_days_idx]
+
+sampled_user_ids = np.random.choice(user_ids_list, N_ORDERS, p=user_weights)
+
+orders_data = []
+for i in range(N_ORDERS):
+    uid   = sampled_user_ids[i]
+    tier  = user_tier_map[uid]
+    prod  = user_product_map[uid]
+    odate = order_dates[i]
+    qty   = int(np.random.choice([1, 2, 3, 5, 10], p=[0.60, 0.20, 0.10, 0.06, 0.04]))
+    unit  = sample_price(tier)
+    total = round(unit * qty, 2)
+    cat   = np.random.choice(ORDER_CATEGORIES, p=ORDER_CAT_W)
+    status= np.random.choice(ORDER_STATUSES, p=ORDER_STATUS_W)
+    created = datetime.combine(odate, datetime.min.time()) + timedelta(
+        hours=np.random.randint(6, 22), minutes=np.random.randint(0, 60))
+    updated = created + timedelta(hours=np.random.randint(0, 48))
+
+    orders_data.append({
+        "order_id":         f"ORD-{i:06d}",
+        "user_id":          uid,
+        "resource_id":      f"RES-{np.random.randint(1, 2001):05d}",
+        "product_type":     prod,
+        "subscription_tier": tier,
+        "order_category":   cat,
+        "status":           status,
+        "unit_price":       unit,
+        "quantity":         qty,
+        "total_value":      total,
+        "currency":         "USD",
+        "payment_method":   np.random.choice(PAYMENT_METHODS, p=PAYMENT_WEIGHTS),
+        "promo_code_used":  np.random.choice([True, False], p=[0.18, 0.82]),
+        "order_date":       odate,
+        "order_month":      odate.strftime("%Y-%m"),
+        "order_quarter":    f"Q{(odate.month - 1) // 3 + 1}-{odate.year}",
+        "billing_country":  user_country_map[uid],
+        "is_high_value":    total > 500,
+        "is_anomaly_flag":  np.random.choice([True, False], p=[0.02, 0.98]),
+        "created_timestamp": created,
+        "updated_timestamp": updated,
     })
 
-orders_df = pd.DataFrame(order_records)
-print(f"  Value stats: min=${orders_df['unit_price'].min():.2f}  "
-      f"median=${orders_df['unit_price'].median():.2f}  "
-      f"max=${orders_df['unit_price'].max():.2f}")
-
-write_ndjson(order_records, f"{VOLUME_PATH}/orders")
+orders_pdf = pd.DataFrame(orders_data)
+print(f"  Status distribution:\n{orders_pdf['status'].value_counts().to_string()}")
+print(f"  Revenue range: ${orders_pdf['total_value'].min():.2f} - ${orders_pdf['total_value'].max():.2f}")
+print(f"  Avg order value: ${orders_pdf['total_value'].mean():.2f}")
 
 # =============================================================================
-# 3. EVENTS  (references users; 6-hour window)
+# 3. EVENTS  (50,000 events over 6-hour window)
 # =============================================================================
-print(f"\nGenerating {N_EVENTS:,} events...")
+print(f"\nGenerating {N_EVENTS:,} events over 6-hour window ({EVENT_START.strftime('%H:%M')} - {EVENT_END.strftime('%H:%M')})...")
 
-# Session map: each user gets 1-5 sessions during the window
-session_map = {}
-for uid in user_ids:
-    n_sessions = int(np.random.choice([0, 1, 2, 3, 5], p=[0.45, 0.30, 0.15, 0.07, 0.03]))
-    session_map[uid] = [f"SES-{uid}-{s:02d}" for s in range(n_sessions)]
+EVENT_TYPES = [
+    "page_view", "click", "api_call", "login", "logout",
+    "search", "export", "feature_use", "error", "session_start",
+    "session_end", "upload", "download", "settings_change", "share",
+]
+EVENT_TYPE_WEIGHTS = [0.22, 0.18, 0.15, 0.06, 0.04, 0.08, 0.05, 0.09, 0.04, 0.03, 0.02, 0.01, 0.01, 0.01, 0.01]
+EVENT_CATEGORIES = {
+    "page_view": "navigation", "click": "engagement", "api_call": "api",
+    "login": "auth", "logout": "auth", "search": "engagement",
+    "export": "engagement", "feature_use": "engagement", "error": "error",
+    "session_start": "auth", "session_end": "auth", "upload": "engagement",
+    "download": "engagement", "settings_change": "engagement", "share": "engagement",
+}
+FEATURE_NAMES = [
+    "dashboard_builder", "report_export", "api_explorer", "user_management",
+    "data_connector", "scheduler", "alert_manager", "audit_log",
+    "ml_pipeline", "query_editor", "visualization", "collaboration",
+]
+PAGE_URLS = [
+    "/dashboard", "/reports", "/api", "/settings", "/users",
+    "/analytics", "/integrations", "/billing", "/help", "/onboarding",
+]
+HTTP_SUCCESS = [200, 201, 204]
+HTTP_ERRORS  = [400, 401, 403, 404, 429, 500, 502, 503]
 
-# Filter to users who have at least one session
-active_users     = [u for u, s in session_map.items() if s]
-active_weights_raw = np.array([activity_weights[users_df.index[users_df["user_id"]==u][0]]
-                                for u in active_users])
-active_weights   = (active_weights_raw / active_weights_raw.sum()).tolist()
+# 6-hour window in seconds
+window_secs = int((EVENT_END - EVENT_START).total_seconds())
 
-event_records = []
+# Session assignments — each session has multiple events
+N_SESSIONS   = N_USERS // 3   # ~3,333 sessions
+session_ids  = [f"SES-{uuid.uuid4().hex[:8].upper()}" for _ in range(N_SESSIONS)]
+
+# Distribute sessions across the 6-hour window (more activity mid-window)
+sess_time_offsets = np.random.beta(2, 2, N_SESSIONS) * window_secs  # bell-shaped
+sess_user_sample  = np.random.choice(user_ids_list, N_SESSIONS, p=user_weights)
+sess_start_times  = [EVENT_START + timedelta(seconds=int(s)) for s in sess_time_offsets]
+
+# Map sessions -> users/start-time
+sess_user_map  = dict(zip(session_ids, sess_user_sample))
+sess_start_map = dict(zip(session_ids, sess_start_times))
+
+# Assign events to sessions (weighted by tier activity)
+sess_tier_weights = np.array([
+    tier_activity_w[user_ids_list.index(sess_user_map[s])] for s in session_ids
+])
+sess_tier_weights /= sess_tier_weights.sum()
+
+event_session_ids = np.random.choice(session_ids, N_EVENTS, p=sess_tier_weights)
+
+events_data = []
 for i in range(N_EVENTS):
-    uid      = np.random.choice(active_users, p=active_weights)
-    tier     = user_tier_map[uid]
-    pt       = user_product_map[uid]
-    rid      = RESOURCE_IDS[pt]
-    sessions = session_map[uid]
-    session  = np.random.choice(sessions)
+    sid   = event_session_ids[i]
+    uid   = sess_user_map[sid]
+    tier  = user_tier_map[uid]
+    prod  = user_product_map[uid]
+    sess_start = sess_start_map[sid]
 
-    evt_type = np.random.choice(EVENT_TYPES, p=EVENT_WEIGHTS)
-    evt_ts   = random_ts(EVENTS_START, EVENTS_END)
+    etype   = np.random.choice(EVENT_TYPES, p=EVENT_TYPE_WEIGHTS)
+    ecat    = EVENT_CATEGORIES[etype]
+    is_err  = etype == "error" or (
+        etype == "api_call" and np.random.random() < (0.03 if tier == "Enterprise" else 0.06))
 
-    # Latency: error and api_call have realistic latency
-    if evt_type == "error_encountered":
-        latency_ms = int(np.random.lognormal(7.5, 0.8))   # higher latency at errors
-    elif evt_type == "api_call":
-        latency_ms = int(np.random.lognormal(5.5, 0.9))
+    # Latency: API calls and errors are slower
+    if etype == "api_call":
+        latency = int(np.random.lognormal(5.5, 0.8))    # ~245ms median
+    elif is_err:
+        latency = int(np.random.lognormal(6.5, 0.6))    # ~665ms median
     else:
-        latency_ms = int(np.random.lognormal(4.5, 0.7))
+        latency = int(np.random.lognormal(4.8, 0.7))    # ~121ms median
+    latency = int(np.clip(latency, 10, 15000))
+    is_high_latency = latency > 1000
 
-    # HTTP status code where applicable
-    if evt_type in ("api_call", "error_encountered"):
-        if evt_type == "error_encountered":
-            http_status = int(np.random.choice([400,401,403,404,429,500,502,503],
-                                               p=[0.15,0.10,0.08,0.20,0.10,0.20,0.10,0.07]))
-        else:
-            http_status = int(np.random.choice([200,201,204,400,429,500],
-                                               p=[0.82,0.06,0.04,0.04,0.02,0.02]))
-    else:
-        http_status = None
+    http_code = (np.random.choice(HTTP_ERRORS) if is_err
+                 else np.random.choice(HTTP_SUCCESS, p=[0.88, 0.09, 0.03]))
 
-    # Feature name for feature events
-    if evt_type in ("feature_activated","feature_deactivated"):
-        feature_name = np.random.choice([
-            "dark_mode","two_factor_auth","advanced_filters","bulk_export",
-            "scheduled_reports","webhooks","sso","custom_dashboards"
-        ])
-    else:
-        feature_name = None
+    # Event timestamp: offset from session start (events within ~30 min window)
+    evt_offset_secs = np.random.exponential(120)   # most events within 2 min of each other
+    evt_ts = sess_start + timedelta(seconds=int(evt_offset_secs))
+    evt_ts = min(evt_ts, EVENT_END)                # cap at window end
 
-    created = evt_ts  # for events, created == event time
-    record = {
-        "event_id":          f"EVT-{i:08d}",
-        "user_id":           uid,
-        "session_id":        session,
-        "resource_id":       rid,
-        "product_type":      pt,
+    created_ts = evt_ts
+    updated_ts = evt_ts + timedelta(seconds=np.random.randint(0, 5))
+
+    events_data.append({
+        "event_id":         f"EVT-{i:06d}",
+        "user_id":          uid,
+        "session_id":       sid,
+        "resource_id":      f"RES-{np.random.randint(1, 2001):05d}",
+        "product_type":     prod,
         "subscription_tier": tier,
-        "event_type":        evt_type,
-        "event_timestamp":   evt_ts,
-        "page_url":          f"/{pt.lower().replace(' ','_')}/{fake.uri_path()}",
-        "referrer":          np.random.choice(
-                                 ["direct","google","email_campaign","in_app","slack"],
-                                 p=[0.35, 0.25, 0.18, 0.14, 0.08]),
-        "latency_ms":        latency_ms,
-        "http_status_code":  http_status,
-        "feature_name":      feature_name,
-        "browser":           users_df.loc[users_df["user_id"]==uid, "browser"].values[0],
-        "os":                users_df.loc[users_df["user_id"]==uid, "os"].values[0],
-        "device_type":       users_df.loc[users_df["user_id"]==uid, "device_type"].values[0],
-        "country":           users_df.loc[users_df["user_id"]==uid, "country"].values[0],
-        "created_timestamp": created,
-        "updated_timestamp": updated_ts(created, max_days=1),
-    }
-    event_records.append(record)
+        "event_type":       etype,
+        "event_category":   ecat,
+        "event_timestamp":  evt_ts,
+        "event_date":       evt_ts.date(),
+        "event_hour":       evt_ts.hour,
+        "event_month":      evt_ts.strftime("%Y-%m"),
+        "feature_name":     np.random.choice(FEATURE_NAMES),
+        "page_url":         np.random.choice(PAGE_URLS),
+        "referrer":         np.random.choice(PAGE_URLS + ["external", None], p=[0.05]*len(PAGE_URLS) + [0.15, 0.35]),
+        "http_status_code": int(http_code),
+        "latency_ms":       latency,
+        "is_error_event":   bool(is_err),
+        "is_high_latency":  bool(is_high_latency),
+        "device_type":      user_device_map[uid],
+        "browser":          user_browser_map[uid],
+        "os":               os_arr[user_ids_list.index(uid)] if uid in user_ids_list else "Unknown",
+        "country":          user_country_map[uid],
+        "created_timestamp": created_ts,
+        "updated_timestamp": updated_ts,
+    })
 
-events_df = pd.DataFrame(event_records)
-print(f"  Event type distribution (top 5):\n"
-      f"{events_df['event_type'].value_counts().head(5).to_string()}")
-print(f"  Time window: {EVENTS_START.strftime('%H:%M')} UTC → {EVENTS_END.strftime('%H:%M')} UTC")
-
-write_ndjson(event_records, f"{VOLUME_PATH}/events")
+events_pdf = pd.DataFrame(events_data)
+print(f"  Event type distribution (top 5):\n{events_pdf['event_type'].value_counts().head().to_string()}")
+print(f"  Error events: {events_pdf['is_error_event'].sum():,} ({events_pdf['is_error_event'].mean()*100:.1f}%)")
+print(f"  High-latency events: {events_pdf['is_high_latency'].sum():,} ({events_pdf['is_high_latency'].mean()*100:.1f}%)")
 
 # =============================================================================
-# SUMMARY
+# 4. SAVE TO VOLUME
 # =============================================================================
-print("\n" + "="*60)
-print("DATA GENERATION COMPLETE")
-print("="*60)
-print(f"  Users  → {VOLUME_PATH}/users   ({N_USERS:,} records)")
-print(f"  Orders → {VOLUME_PATH}/orders  ({N_ORDERS:,} records)")
-print(f"  Events → {VOLUME_PATH}/events  ({N_EVENTS:,} records)")
-print(f"\nKey join columns: user_id, resource_id, product_type, subscription_tier")
-print(f"Timestamp columns: created_timestamp, updated_timestamp (all)")
-print(f"                   event_timestamp   (events only)")
+print(f"\nSaving to {VOLUME_PATH}...")
+
+spark.createDataFrame(users_pdf).write.mode("overwrite").parquet(f"{VOLUME_PATH}/users")
+print(f"  Saved users: {len(users_pdf):,} rows")
+
+spark.createDataFrame(orders_pdf).write.mode("overwrite").parquet(f"{VOLUME_PATH}/orders")
+print(f"  Saved orders: {len(orders_pdf):,} rows")
+
+spark.createDataFrame(events_pdf).write.mode("overwrite").parquet(f"{VOLUME_PATH}/events")
+print(f"  Saved events: {len(events_pdf):,} rows")
+
+# =============================================================================
+# 5. VALIDATION
+# =============================================================================
+print("\n=== VALIDATION ===")
+for name in ["users", "orders", "events"]:
+    df = spark.read.parquet(f"{VOLUME_PATH}/{name}")
+    print(f"  {name}: {df.count():,} rows | {len(df.columns)} columns")
+
+# Revenue summary
+print(f"\n  Order revenue by tier:")
+orders_pdf.groupby("subscription_tier")["total_value"].agg(["count","sum","mean"]).round(2).apply(
+    lambda r: print(f"    {r.name}: {int(r['count']):,} orders | ${r['sum']:,.0f} total | ${r['mean']:.2f} avg")
+, axis=1)
+
+print(f"\n  Event window: {events_pdf['event_timestamp'].min()} -> {events_pdf['event_timestamp'].max()}")
+print(f"  Order window: {orders_pdf['order_date'].min()} -> {orders_pdf['order_date'].max()}")
+print("\n✅ Data generation complete!")
+print(f"   Volume: {VOLUME_PATH}")
+print(f"   Users:  {VOLUME_PATH}/users")
+print(f"   Orders: {VOLUME_PATH}/orders")
+print(f"   Events: {VOLUME_PATH}/events")

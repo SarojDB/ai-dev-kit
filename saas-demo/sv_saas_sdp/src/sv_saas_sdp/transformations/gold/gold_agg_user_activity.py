@@ -1,19 +1,19 @@
 """
 Gold layer: agg_user_activity — daily user activity aggregate (Materialized View).
 
-Typical SaaS metric: DAU/WAU/MAU tracking, feature adoption, error rates.
+Key SaaS metric: DAU/WAU/MAU tracking, feature adoption, error rates, SLO compliance.
 Grain: event_date × subscription_tier × product_type
 
 Metrics:
   dau               - Daily Active Users (distinct user_id per day)
-  total_events      - total event volume
-  total_sessions    - unique session count (proxy for engagement depth)
-  avg_latency_ms    - P50 latency (infrastructure health indicator)
-  p95_latency_ms    - P95 latency (SLO monitoring)
+  total_events      - raw event volume
+  total_sessions    - unique sessions (proxy for engagement depth)
+  avg_latency_ms    - average latency (infrastructure health)
+  p95_latency_ms    - P95 latency (SLO monitoring threshold)
   error_count       - error event count (quality metric)
   error_rate        - % of events that are errors (SLO compliance)
-  feature_use_count - feature adoption events
-  api_call_count    - API usage (integration depth)
+  feature_use_count - feature adoption volume (event_type = 'feature_use')
+  api_call_count    - API usage depth (event_type = 'api_call')
   high_latency_pct  - % of events exceeding 1s (performance health)
 
 Refreshed on each pipeline run from fact_event (gold SCD1).
@@ -47,9 +47,10 @@ def agg_user_activity():
             F.percentile_approx("latency_ms", 0.95).alias("p95_latency_ms"),
             F.sum(F.when(F.col("is_error_event") == True, 1).otherwise(0))
              .alias("error_count"),
-            F.sum(F.when(F.col("event_category") == "feature_use", 1).otherwise(0))
+            # Count by specific event_type for accurate feature/api metrics
+            F.sum(F.when(F.col("event_type") == "feature_use", 1).otherwise(0))
              .alias("feature_use_count"),
-            F.sum(F.when(F.col("event_category") == "api_call", 1).otherwise(0))
+            F.sum(F.when(F.col("event_type") == "api_call", 1).otherwise(0))
              .alias("api_call_count"),
             F.sum(F.when(F.col("is_high_latency") == True, 1).otherwise(0))
              .alias("high_latency_events"),
@@ -57,14 +58,16 @@ def agg_user_activity():
         )
         .withColumn(
             "error_rate",
-            F.when(F.col("total_events") > 0,
-                   (F.col("error_count") / F.col("total_events")).cast("decimal(6,4)"))
-             .otherwise(F.lit(0.0))
+            F.when(
+                F.col("total_events") > 0,
+                (F.col("error_count") / F.col("total_events")).cast("decimal(6,4)")
+            ).otherwise(F.lit(0.0))
         )
         .withColumn(
             "high_latency_pct",
-            F.when(F.col("total_events") > 0,
-                   (F.col("high_latency_events") / F.col("total_events")).cast("decimal(6,4)"))
-             .otherwise(F.lit(0.0))
+            F.when(
+                F.col("total_events") > 0,
+                (F.col("high_latency_events") / F.col("total_events")).cast("decimal(6,4)")
+            ).otherwise(F.lit(0.0))
         )
     )

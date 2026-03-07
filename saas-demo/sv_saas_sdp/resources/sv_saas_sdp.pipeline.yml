@@ -3,16 +3,21 @@ resources:
     sv_saas_sdp:
       name: sv_saas_sdp
 
-      # Pipeline writes bronze tables to the default catalog/schema.
-      # Silver and gold use qualified names (schema.table) in Python code.
+      # Pipeline default catalog/schema → bronze layer.
+      # Silver and gold tables use qualified "schema.table" names in Python.
       catalog: ${var.catalog}
       schema: ${var.bronze_schema}
 
       serverless: true
 
+      # Phase 3: full medallion — bronze + silver + gold
       libraries:
         - glob:
-            include: ../src/sv_saas_sdp/transformations/**
+            include: ../src/sv_saas_sdp/transformations/bronze/**
+        - glob:
+            include: ../src/sv_saas_sdp/transformations/silver/**
+        - glob:
+            include: ../src/sv_saas_sdp/transformations/gold/**
 
       configuration:
         catalog: ${var.catalog}
