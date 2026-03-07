@@ -1,0 +1,47 @@
+bundle:
+  name: sv_bank_transactions_fraud_sdp
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    default: financial_security
+  bronze_schema:
+    default: sv_bank_transactions_fraud_bronze
+  silver_schema:
+    default: sv_bank_transactions_fraud_silver
+  gold_schema:
+    default: sv_bank_transactions_fraud_gold
+  raw_data_path:
+    default: /Volumes/financial_security/raw_data/mock_banking_data
+  schema_location_base:
+    default: /Volumes/financial_security/raw_data/sv_bank_fraud_sdp_metadata/schemas
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      host: https://dbc-8debdea9-18d5.cloud.databricks.com
+      profile: databricks_oneenv
+    variables:
+      catalog: financial_security
+      bronze_schema: sv_bank_transactions_fraud_bronze
+      silver_schema: sv_bank_transactions_fraud_silver
+      gold_schema: sv_bank_transactions_fraud_gold
+      raw_data_path: /Volumes/financial_security/raw_data/mock_banking_data
+      schema_location_base: /Volumes/financial_security/raw_data/sv_bank_fraud_sdp_metadata/schemas
+
+  prod:
+    mode: production
+    workspace:
+      host: https://dbc-8debdea9-18d5.cloud.databricks.com
+      profile: databricks_oneenv
+    variables:
+      catalog: financial_security
+      bronze_schema: sv_bank_transactions_fraud_bronze
+      silver_schema: sv_bank_transactions_fraud_silver
+      gold_schema: sv_bank_transactions_fraud_gold
+      raw_data_path: /Volumes/financial_security/raw_data/mock_banking_data
+      schema_location_base: /Volumes/financial_security/raw_data/sv_bank_fraud_sdp_metadata/schemas

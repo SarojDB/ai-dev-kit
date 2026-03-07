@@ -1,0 +1,32 @@
+resources:
+  pipelines:
+    sv_fraud_analytics_sdp:
+      name: sv_fraud_analytics_sdp
+
+      # Pipeline default catalog/schema → bronze layer.
+      # Silver and gold tables use qualified "schema.table" names in Python.
+      catalog: ${var.catalog}
+      schema: ${var.bronze_schema}
+
+      serverless: true
+
+      # Phase 3: full medallion — bronze + silver + gold
+      libraries:
+        - glob:
+            include: ../src/sv_fraud_analytics_sdp/transformations/bronze/**
+        - glob:
+            include: ../src/sv_fraud_analytics_sdp/transformations/silver/**
+        - glob:
+            include: ../src/sv_fraud_analytics_sdp/transformations/gold/**
+
+      configuration:
+        catalog: ${var.catalog}
+        bronze_schema: ${var.bronze_schema}
+        silver_schema: ${var.silver_schema}
+        gold_schema: ${var.gold_schema}
+        raw_data_path: ${var.raw_data_path}
+        schema_location_base: ${var.schema_location_base}
+
+      permissions:
+        - level: CAN_VIEW
+          group_name: users

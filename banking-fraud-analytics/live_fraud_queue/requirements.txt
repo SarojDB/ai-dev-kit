@@ -1,0 +1,5 @@
+dash-bootstrap-components>=1.6.0
+dash-ag-grid>=31.0.0
+psycopg2-binary>=2.9.9
+databricks-sdk>=0.40.0
+databricks-sql-connector>=3.4.0

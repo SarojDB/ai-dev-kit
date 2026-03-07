@@ -1,0 +1,56 @@
+bundle:
+  name: sv_fraud_analytics_sdp
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog name
+    default: aibuilder_fraud_analytics
+
+  bronze_schema:
+    description: Bronze layer schema
+    default: sv_fraud_analytics_bronze
+
+  silver_schema:
+    description: Silver layer schema
+    default: sv_fraud_analytics_silver
+
+  gold_schema:
+    description: Gold layer schema
+    default: sv_fraud_analytics_gold
+
+  raw_data_path:
+    description: Path to raw fraud analytics JSON data in UC volume
+    default: /Volumes/aibuilder_fraud_analytics/raw_data/fraud_analytics_raw_data
+
+  schema_location_base:
+    description: Base path for Auto Loader schema metadata (separate volume from raw data)
+    default: /Volumes/aibuilder_fraud_analytics/raw_data/fraud_analytics_sdp_metadata/schemas
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      host: https://dbc-8debdea9-18d5.cloud.databricks.com
+      profile: databricks_oneenv
+    variables:
+      catalog: aibuilder_fraud_analytics
+      bronze_schema: sv_fraud_analytics_bronze
+      silver_schema: sv_fraud_analytics_silver
+      gold_schema: sv_fraud_analytics_gold
+
+  prod:
+    mode: production
+    workspace:
+      host: https://dbc-8debdea9-18d5.cloud.databricks.com
+      profile: databricks_oneenv
+      root_path: /Workspace/Users/saroj.venkatesh@databricks.com/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: aibuilder_fraud_analytics
+      bronze_schema: sv_fraud_analytics_bronze
+      silver_schema: sv_fraud_analytics_silver
+      gold_schema: sv_fraud_analytics_gold
+      schema_location_base: /Volumes/aibuilder_fraud_analytics/raw_data/fraud_analytics_sdp_metadata/schemas_prod

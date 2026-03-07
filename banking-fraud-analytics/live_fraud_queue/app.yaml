@@ -1,0 +1,22 @@
+command:
+  - "python"
+  - "app.py"
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+
+  # Lakebase Provisioned: resource key "lakebase" injects instance name + db name
+  - name: LAKEBASE_INSTANCE_NAME
+    valueFrom: lakebase.instance_name
+
+  - name: LAKEBASE_DATABASE_NAME
+    valueFrom: lakebase.database_name
+
+  # Genie space ID for the Banking Fraud Investigation Hub
+  # Permission (CAN_RUN) is granted directly to the app SP via the permissions API.
+  - name: GENIE_SPACE_ID
+    value: "01f118649c9413ec89adfb36436d439a"
+
+  - name: USE_MOCK_BACKEND
+    value: "false"
