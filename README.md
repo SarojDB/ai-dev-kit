@@ -39,6 +39,7 @@ AI-Driven Development (vibe coding) on Databricks just got a whole lot better. T
 | [**Visual Builder App**](#visual-builder-app) | Web-based UI for Databricks development | `databricks-builder-app/` |
 | [**Core Library**](#core-library) | Building custom integrations (LangChain, OpenAI, etc.) | `pip install` |
 | [**Skills Only**](databricks-skills/) | Provide Databricks patterns and best practices (without MCP functions) | Install skills |
+| [**Genie Code Skills**](databricks-skills/install_skills_to_genie_code.sh) | Install Databricks skills for Genie Code to reference | [Genie Code skills (install)](#genie-code-skills) |
 | [**MCP Tools Only**](databricks-mcp-server/) | Just executable actions (no guidance) | Register MCP server |
 ---
 
@@ -157,6 +158,29 @@ results = execute_sql("SELECT * FROM my_catalog.schema.table LIMIT 10")
 Works with LangChain, OpenAI Agents SDK, or any Python framework. See [databricks-tools-core/](databricks-tools-core/) for details.
 
 ---
+## Genie Code Skills
+  
+  Will install and deploy all available skills to your personal skills directory for all Genie Code sessions to reference while planning/building anything directly in the UI. No post-install steps as workspace is automatically configured during install process for Genie Code to use the skills.
+
+  **Basic installation** (uses DEFAULT profile)
+
+```bash
+cd ai-dev-kit/databricks-skills
+./install_skills_to_genie_code.sh
+```
+
+**Advance installation** (uses provided profile)
+
+```bash
+cd ai-dev-kit/databricks-skills
+./install_skills_to_genie_code <profile_name>
+```
+
+**Skill modification or Custom Skill**
+
+After the script successfully installs the skills to your workspace, you may find the skills under `/Workspace/Users/<your_user_name>/.assistant/skills`.
+
+This directory is customizable if you wish to only use certain skills or even create custom skills that are related to your organization to make Genie Code even better.  You can modify/remove existing skills or create new skills folders that Genie Code will automatically use in any session.
 
 ## What's Included
 
