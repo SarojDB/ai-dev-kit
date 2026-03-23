@@ -1475,6 +1475,10 @@ write_mcp_configs() {
                 ok "Gemini CLI MCP config"
                 ;;
             antigravity)
+                if [ "$SCOPE" = "project" ]; then
+                    warn "Antigravity only supports global MCP configuration."
+                    msg "  Config written to ${B}~/.gemini/antigravity/mcp_config.json${N}"
+                fi
                 write_gemini_mcp_json "$HOME/.gemini/antigravity/mcp_config.json"
                 ok "Antigravity MCP config"
                 ;;

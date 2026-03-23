@@ -1571,6 +1571,10 @@ function Write-McpConfigs {
                 Write-Ok "Gemini CLI MCP config"
             }
             "antigravity" {
+                if ($script:Scope -eq "project") {
+                    Write-Warn "Antigravity only supports global MCP configuration."
+                    Write-Msg "  Config written to ~/.gemini/antigravity/mcp_config.json"
+                }
                 Write-GeminiMcpJson (Join-Path $env:USERPROFILE ".gemini\antigravity\mcp_config.json")
                 Write-Ok "Antigravity MCP config"
             }
