@@ -101,7 +101,7 @@ dbutils.library.restartPython()
 
 Or via MCP:
 ```
-execute_databricks_command(code="%pip install -U mlflow==3.6.0 databricks-langchain langgraph==0.3.4 databricks-agents pydantic")
+execute_code(code="%pip install -U mlflow==3.6.0 databricks-langchain langgraph==0.3.4 databricks-agents pydantic")
 ```
 
 ### Step 2: Create Agent File
@@ -120,7 +120,7 @@ upload_folder(
 ### Step 4: Test Agent
 
 ```
-run_python_file_on_databricks(
+execute_code(
     file_path="./my_agent/test_agent.py",
     cluster_id="<cluster_id>"
 )
@@ -129,7 +129,7 @@ run_python_file_on_databricks(
 ### Step 5: Log Model
 
 ```
-run_python_file_on_databricks(
+execute_code(
     file_path="./my_agent/log_model.py",
     cluster_id="<cluster_id>"
 )
@@ -181,8 +181,7 @@ Then deploy via UI or SDK. See [1-classical-ml.md](1-classical-ml.md).
 | Tool | Purpose |
 |------|---------|
 | `upload_folder` | Upload agent files to workspace |
-| `run_python_file_on_databricks` | Test agent, log model |
-| `execute_databricks_command` | Install packages, quick tests |
+| `execute_code` | Install packages, test agent, log model |
 
 ### Deployment
 

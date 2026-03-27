@@ -18,12 +18,12 @@ MCP-based workflow for developing and testing agents on Databricks.
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ Step 3: Install packages                                    │
-│   → execute_databricks_command MCP tool                     │
+│   → execute_code MCP tool                                   │
 └─────────────────────────────────────────────────────────────┘
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ Step 4: Test agent (iterate)                                │
-│   → run_python_file_on_databricks MCP tool                  │
+│   → execute_code MCP tool (with file_path)                  │
 │   → If error: fix locally, re-upload, re-run                │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -98,10 +98,10 @@ This uploads all files in parallel.
 
 ## Step 3: Install Packages
 
-Use `execute_databricks_command` to install dependencies:
+Use `execute_code` to install dependencies:
 
 ```
-execute_databricks_command(
+execute_code(
     code="%pip install -U mlflow==3.6.0 databricks-langchain langgraph==0.3.4 databricks-agents pydantic"
 )
 ```
@@ -111,7 +111,7 @@ execute_databricks_command(
 ### Follow-up Commands (Reuse Context)
 
 ```
-execute_databricks_command(
+execute_code(
     code="dbutils.library.restartPython()",
     cluster_id="<cluster_id>",
     context_id="<context_id>"
@@ -120,10 +120,10 @@ execute_databricks_command(
 
 ## Step 4: Test the Agent
 
-Use `run_python_file_on_databricks`:
+Use `execute_code` with `file_path`:
 
 ```
-run_python_file_on_databricks(
+execute_code(
     file_path="./my_agent/test_agent.py",
     cluster_id="<cluster_id>",
     context_id="<context_id>"
@@ -135,7 +135,7 @@ run_python_file_on_databricks(
 1. Read the error from the output
 2. Fix the local file (`agent.py` or `test_agent.py`)
 3. Re-upload: `upload_folder(...)`
-4. Re-run: `run_python_file_on_databricks(...)`
+4. Re-run: `execute_code(file_path=...)`
 
 ### Iteration Tips
 
@@ -148,7 +148,7 @@ run_python_file_on_databricks(
 ### Check if packages are installed
 
 ```
-execute_databricks_command(
+execute_code(
     code="import mlflow; print(mlflow.__version__)",
     cluster_id="<cluster_id>",
     context_id="<context_id>"
@@ -158,7 +158,7 @@ execute_databricks_command(
 ### List available endpoints
 
 ```
-execute_databricks_command(
+execute_code(
     code="""
 from databricks.sdk import WorkspaceClient
 w = WorkspaceClient()
@@ -173,7 +173,7 @@ for ep in list(w.serving_endpoints.list())[:10]:
 ### Test LLM endpoint directly
 
 ```
-execute_databricks_command(
+execute_code(
     code="""
 from databricks_langchain import ChatDatabricks
 llm = ChatDatabricks(endpoint="databricks-meta-llama-3-3-70b-instruct")
@@ -190,10 +190,10 @@ print(response.content)
 | Step | MCP Tool | Purpose |
 |------|----------|---------|
 | Upload files | `upload_folder` | Sync local files to workspace |
-| Install packages | `execute_databricks_command` | Set up dependencies |
-| Restart Python | `execute_databricks_command` | Apply package changes |
-| Test agent | `run_python_file_on_databricks` | Run test script |
-| Debug | `execute_databricks_command` | Quick checks |
+| Install packages | `execute_code` | Set up dependencies |
+| Restart Python | `execute_code` | Apply package changes |
+| Test agent | `execute_code` (with `file_path`) | Run test script |
+| Debug | `execute_code` | Quick checks |
 
 ## Next Steps
 

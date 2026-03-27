@@ -90,10 +90,10 @@ Claude now has both:
 
 | Tool | Description |
 |------|-------------|
-| `list_clusters` | List all clusters in the workspace |
-| `get_best_cluster` | Get the best available cluster for execution |
-| `execute_databricks_command` | Execute code on a Databricks cluster |
-| `run_python_file_on_databricks` | Run a local Python file on a cluster |
+| `execute_code` | Execute code on Databricks (serverless or cluster), or run a local file |
+| `manage_cluster` | Create, modify, start, terminate, or delete clusters |
+| `manage_sql_warehouse` | Create, modify, or delete SQL warehouses |
+| `list_compute` | List clusters, node types, or spark versions |
 
 ### File Operations
 
