@@ -148,7 +148,7 @@ When using `execute_sql` or other SQL tools, use this warehouse_id by default.
 - **Workspace Folder (Databricks):** `{workspace_folder}`
 
 Use this path ONLY for:
-- `upload_folder` / `upload_file` tools (uploading TO Databricks Workspace)
+- `upload_to_workspace` tool (uploading TO Databricks Workspace)
 - Creating pipelines (as the root_path parameter)
 
 **DO NOT use this path for:**
@@ -242,7 +242,7 @@ Use it as storage to track all the resources created in the project, and be able
 
 - **Always use MCP tools** - never use CLI commands, curl, or SDK code when an MCP tool exists
 - MCP tool names use the format `mcp__databricks__<tool_name>` (e.g., `mcp__databricks__execute_sql`)
-- Use `upload_folder`/`upload_file` for file uploads, never manual steps
+- Use `upload_to_workspace` for file uploads, never manual steps
 - Use `create_or_update_pipeline` for pipelines, never SDK code
 - **Do NOT use the AskUserQuestion tool.** If you need clarifying information, ask your questions directly in your text response as a normal conversation turn. The user will reply naturally.
 

@@ -161,7 +161,7 @@ Tools are exposed as `mcp__databricks__<tool_name>` and include:
 - Warehouse management (`list_warehouses`, `get_best_warehouse`)
 - Cluster execution (`execute_code`)
 - Pipeline management (`create_or_update_pipeline`, `start_update`, etc.)
-- File operations (`upload_file`, `upload_folder`)
+- File operations (`upload_to_workspace`)
 
 ### 4. Skills System
 

@@ -111,9 +111,9 @@ Create `agent.py` locally with `ResponsesAgent` pattern (see [3-genai-agents.md]
 ### Step 3: Upload to Workspace
 
 ```
-upload_folder(
-    local_folder="./my_agent",
-    workspace_folder="/Workspace/Users/you@company.com/my_agent"
+upload_to_workspace(
+    local_path="./my_agent",
+    workspace_path="/Workspace/Users/you@company.com/my_agent"
 )
 ```
 
@@ -180,7 +180,7 @@ Then deploy via UI or SDK. See [1-classical-ml.md](1-classical-ml.md).
 
 | Tool | Purpose |
 |------|---------|
-| `upload_folder` | Upload agent files to workspace |
+| `upload_to_workspace` | Upload agent files to workspace |
 | `execute_code` | Install packages, test agent, log model |
 
 ### Deployment

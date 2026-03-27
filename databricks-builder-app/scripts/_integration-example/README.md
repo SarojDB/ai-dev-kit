@@ -135,7 +135,7 @@ The agent has access to Databricks tools via MCP:
 - **Compute**: `execute_code`, `manage_cluster`, `manage_sql_warehouse`, `list_compute`
 - **Jobs**: `create_job`, `run_job_now`, `wait_for_run`, `list_runs`
 - **Pipelines**: `create_or_update_pipeline`, `start_update`, `get_update`
-- **Files**: `upload_file`, `upload_folder`
+- **Files**: `upload_to_workspace`
 - **Unity Catalog**: Catalog, schema, table, volume operations
 
 ### Configuring Context
