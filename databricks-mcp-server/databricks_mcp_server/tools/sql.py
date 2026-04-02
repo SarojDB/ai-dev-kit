@@ -7,7 +7,8 @@ from databricks_tools_core.sql import (
     execute_sql_multi as _execute_sql_multi,
     list_warehouses as _list_warehouses,
     get_best_warehouse as _get_best_warehouse,
-    get_table_details as _get_table_details,
+    get_table_stats_and_schema as _get_table_stats_and_schema,
+    get_volume_folder_details as _get_volume_folder_details,
     TableStatLevel,
 )
 
@@ -53,7 +54,7 @@ def _format_results_markdown(rows: List[Dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
-@mcp.tool
+@mcp.tool(timeout=60)
 def execute_sql(
     sql_query: str,
     warehouse_id: str = None,
@@ -101,7 +102,7 @@ def execute_sql(
     return _format_results_markdown(rows)
 
 
-@mcp.tool
+@mcp.tool(timeout=120)
 def execute_sql_multi(
     sql_content: str,
     warehouse_id: str = None,
@@ -155,7 +156,7 @@ def execute_sql_multi(
     return result
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def list_warehouses() -> List[Dict[str, Any]]:
     """
     List all SQL warehouses in the workspace.
@@ -166,7 +167,7 @@ def list_warehouses() -> List[Dict[str, Any]]:
     return _list_warehouses()
 
 
-@mcp.tool
+@mcp.tool(timeout=30)
 def get_best_warehouse() -> Optional[str]:
     """
     Get the ID of the best available SQL warehouse.
@@ -179,8 +180,8 @@ def get_best_warehouse() -> Optional[str]:
     return _get_best_warehouse()
 
 
-@mcp.tool
-def get_table_details(
+@mcp.tool(timeout=60)
+def get_table_stats_and_schema(
     catalog: str,
     schema: str,
     table_names: List[str] = None,
@@ -188,7 +189,11 @@ def get_table_details(
     warehouse_id: str = None,
 ) -> Dict[str, Any]:
     """
-    Get table schema and statistics for one or more tables.
+    Get schema and statistics for tables in a Unity Catalog schema.
+
+    Returns column names, data types, row counts, and optionally detailed
+    column-level statistics (cardinality, min/max, null counts, histograms,
+    and percentiles).
 
     Args:
         catalog: Unity Catalog name
@@ -196,9 +201,10 @@ def get_table_details(
         table_names: List of table names or GLOB patterns (e.g., ["bronze_*", "silver_orders"]).
                     If None, returns all tables in the schema.
         table_stat_level: Level of statistics to collect:
-            - "NONE": Schema only, no statistics
-            - "SIMPLE": Row count and basic info (default)
-            - "DETAILED": Column-level statistics including histograms
+            - "NONE": Schema only (column names, types) - fast, no stats
+            - "SIMPLE": Schema + row count, basic column info (default)
+            - "DETAILED": Full column stats including cardinality, min/max,
+              null counts, histograms, and percentiles
         warehouse_id: Optional warehouse ID. If not provided, auto-selects one.
 
     Returns:
@@ -206,7 +212,7 @@ def get_table_details(
     """
     # Convert string to enum
     level = TableStatLevel[table_stat_level.upper()]
-    result = _get_table_details(
+    result = _get_table_stats_and_schema(
         catalog=catalog,
         schema=schema,
         table_names=table_names,
@@ -214,4 +220,37 @@ def get_table_details(
         warehouse_id=warehouse_id,
     )
     # Convert to dict for JSON serialization
+    return result.model_dump(exclude_none=True) if hasattr(result, "model_dump") else result
+
+
+@mcp.tool(timeout=60)
+def get_volume_folder_details(
+    volume_path: str,
+    format: str = "parquet",
+    table_stat_level: str = "SIMPLE",
+    warehouse_id: str = None,
+) -> Dict[str, Any]:
+    """
+    Get schema and statistics for data files in a Databricks Volume folder.
+
+    Similar to get_table_stats_and_schema but for raw files stored in Volumes.
+
+    Args:
+        volume_path: Path to the volume folder. Can be:
+            - "catalog/schema/volume/path" (e.g., "ai_dev_kit/demo/raw_data/customers")
+            - "/Volumes/catalog/schema/volume/path"
+        format: Data format - "parquet", "csv", "json", "delta", or "file" (just list files).
+        table_stat_level: Level of statistics - "NONE", "SIMPLE" (default), or "DETAILED".
+        warehouse_id: Optional warehouse ID. If not provided, auto-selects one.
+
+    Returns:
+        Dictionary with schema, row count, column stats, and sample data.
+    """
+    level = TableStatLevel[table_stat_level.upper()]
+    result = _get_volume_folder_details(
+        volume_path=volume_path,
+        format=format,
+        table_stat_level=level,
+        warehouse_id=warehouse_id,
+    )
     return result.model_dump(exclude_none=True) if hasattr(result, "model_dump") else result

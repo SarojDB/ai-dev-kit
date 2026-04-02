@@ -6,7 +6,6 @@ import subprocess
 from typing import Any, Dict, List, Optional
 
 from databricks_tools_core.auth import (
-    clear_active_workspace,
     get_active_workspace,
     get_workspace_client,
     set_active_workspace,
@@ -228,7 +227,7 @@ def _manage_workspace_impl(
             }
 
 
-@mcp.tool
+@mcp.tool(timeout=60)
 def manage_workspace(
     action: str,
     profile: Optional[str] = None,
