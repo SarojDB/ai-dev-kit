@@ -88,7 +88,7 @@ Create, modify, or delete SQL warehouses.
 
 **DESTRUCTIVE:** `"delete"` is permanent — always confirm with user.
 
-For listing warehouses, use the `list_warehouses` tool (SQL tools).
+For listing warehouses, use the `manage_warehouse(action="list")` tool (SQL tools).
 
 ### list_compute
 
