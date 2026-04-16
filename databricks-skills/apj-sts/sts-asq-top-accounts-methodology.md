@@ -13,7 +13,7 @@ This document describes how to identify and visualise the top 3 customer account
 |---|---|
 | Louis Chen | All APJ regions |
 | Pui-Ching Lee | All APJ regions |
-| Adarsh Nandan | All APJ regions |
+| Adarsh Nandan (`ADARSH NANDAN` in SFDC `User.Name`) | All APJ regions |
 | Hemapriya N | All APJ regions |
 | Kavya Parasher | All APJ regions |
 | Simran Vanjani | All APJ regions |

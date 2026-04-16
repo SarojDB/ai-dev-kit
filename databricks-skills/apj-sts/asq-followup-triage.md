@@ -17,6 +17,23 @@ Query `ContentDocumentLink` for each ASQ. If a workspace setup checklist is alre
 **b. Use case stage (live check)**
 Re-query the linked use case stage directly from SFDC — do not rely on stage information from initial triage, as it may be stale. If the stage has been advanced since initial triage, acknowledge the progress and drop any stage-related blocker from the reminder.
 
+The UC is **not** a direct field on `ApprovalRequest__c`. It is linked via the `Approved_UseCase__c` junction object. Query it as follows:
+
+```
+SELECT Id, Use_Case__c, Stage__c
+FROM Approved_UseCase__c
+WHERE Approval_Request__c = '{asq_id}'
+```
+
+The `Stage__c` field on `Approved_UseCase__c` maps to UC stages as follows: `3-Evaluating` = U3, `4-Confirming` = U4, `5-Onboarding` = U5, `6-Consuming` = U6. If you need the `Concatenated_Stage_Name__c` value, take the `Use_Case__c` ID returned and run a separate query: `SELECT Id, Concatenated_Stage_Name__c FROM UseCase__c WHERE Id = '<uc_id>'`.
+
+Apply UC stage requirements based on `Support_Type__c`:
+
+- **Platform Administration** (workspace setup requests): UC stage **U2 or above** is acceptable. Do **not** flag or block these ASQs for UC stage — focus on obtaining the workspace setup checklist instead.
+- **All other support types** (ML & GenAI, Data Engineering, etc.): UC stage **U3 or above** is required before an engineer can be assigned.
+
+Do **not** query `UseCase__c` as a field directly on `ApprovalRequest__c` — that field does not exist and will return null or a 400 error.
+
 **c. Requestor fallback**
 If `Requestor__r` is null on the ASQ record, extract the requestor from the first @mention in the earliest triage chatter post and use that user for structured mentions in all chatter updates.
 
@@ -26,9 +43,15 @@ For ASQs where `Support_Type__c` is not `Platform Administration` (e.g. ML & Gen
 ### 3. Read All Chatter History
 For **every** ASQ retrieved, read **all** chatter posts and comments in full — do not limit to recent activity. This is required to understand the full history, identify the last triage chatter sent, and determine whether a response has been received.
 
+**Two-step fetch required:** The Chatter `feed-elements` endpoint (`GET /chatter/feeds/record/{id}/feed-elements`) returns top-level posts with a `comment_count` field but does **not** include inline comment content. For every post where `comment_count > 0`, fetch the comments separately via:
+```
+GET /chatter/feed-elements/{postId}/capabilities/comments/items
+```
+Skipping this step will cause inline responses from requestors to be silently missed.
+
 For each ASQ, identify:
 - The **last chatter post sent by the triage team** and its date
-- Whether there has been a **response from the requestor or any other party** after that post
+- Whether there has been a **response from the requestor or any other party** after that post — including inline comments fetched via the above endpoint
 - The **full content** of any response received
 
 ### 4. Determine Action Based on Chatter State
@@ -56,9 +79,39 @@ For ASQs that have been 'Under Review' for more than 1 week:
 
 ### 6. Recommend Next Steps for Updated ASQs
 For ASQs where a response to triage chatter has been received, recommend the next steps:
-- **Ready for triage:** Follow the steps and practices as per the ASQ triage process (see `new-asq-triage.md`). When assigning to an engineer, set status to **'In Progress'** — there is no 'Assigned' status. Also update the **OwnerId** of the ASQ record to the assigned engineer's Salesforce User ID.
+- **Ready for triage:** Before proceeding to engineer assignment, run the **repeat engagement check** (see Step 6a below). If no repeat engagement is detected, follow the steps and practices as per the ASQ triage process (see `new-asq-triage.md`). When assigning to an engineer, set status to **'In Progress'** — there is no 'Assigned' status. Also update the **OwnerId** of the ASQ record to the assigned engineer's Salesforce User ID.
 - **Workspace setup ASQ — checklist still not attached:** Re-send a reminder to the requestor using a **structured Salesforce Mention** with a link to [go/wssetup-cheatsheet](https://sites.google.com/databricks.com/sts-workspace-setup) and keep status as **'Under Review'**.
 - **No longer required:** Modify the status to **"Rejected"** and recommend action based on latest comment on SFDC chatter/activity
+
+#### 6a. Repeat Engagement Check (run before assignment for all non-workspace-setup ASQs)
+
+Before assigning an engineer to any ASQ that is ready for triage, check whether STS has previously engaged with the same account on the same or closely related scope:
+
+**Step 1 — Query prior ASQs for the account:**
+```
+SELECT Id, Name, Status__c, Support_Type__c, CreatedDate, Owner.Name
+FROM ApprovalRequest__c
+WHERE Account_Name__c LIKE '%<account_name>%'
+AND CreatedDate >= <date_4_months_ago>T00:00:00Z
+ORDER BY CreatedDate ASC
+```
+
+**Step 2 — Cross-reference the use case:**
+For any prior ASQs found with status `Complete` or `In Progress`, query `Approved_UseCase__c` for both the prior and current ASQ and compare the `Use_Case__c` IDs. If the **same use case ID** is linked to both ASQs, flag this as a repeat engagement.
+
+**Step 3 — Apply repeat engagement policy:**
+If a prior completed ASQ is found for the same account with the same use case and similar support scope:
+- Do **not** proceed directly to assignment.
+- Post a chatter update to the requestor that:
+  - References the prior ASQ number and engagement dates
+  - States that STS cannot be repeatedly engaged for the same service on the same use case
+  - Asks the requestor to confirm what steps and deliverables from the prior engagement have been executed by the customer
+  - Asks what specifically is outstanding or has regressed to require re-engagement
+  - Suggests a scoping call to define what is incremental versus duplicating prior work
+- Keep status as **'Under Review'** pending the requestor's response.
+
+**Step 4 — Continuity engineer recommendation:**
+If the repeat engagement check passes (or after scope is confirmed as incremental), recommend the same engineer who executed the prior ASQ for continuity — they will have context on the customer environment. Reference the prior ASQ in the assignment chatter.
 
 ### 7. Output Format
 Show the final results in a **tabular format** with recommendations on all ASQs analyzed.

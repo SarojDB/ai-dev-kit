@@ -7,7 +7,23 @@ Goal: Triage incoming ASQs for the APJ STS Team and respond to requestor for cla
 ### 1. Retrieve New ASQs
 Start by getting a list of all the new ASQs in the **Technical_Onboarding_Services_APJ** queue in SFDC where the attached use case is **not** in Validating or Lost stage.
 
-If an ASQ has **no use case linked** in the ASQ fields:
+> **Important — Use Case lookup (two-step):**
+>
+> **Step 1 — Direct link via junction object (preferred):** Query the `Approved_UseCase__c` junction object to find use cases specifically linked to this ASQ:
+> ```sql
+> SELECT Id, Use_Case__c, Stage__c
+> FROM Approved_UseCase__c
+> WHERE Approval_Request__c = '<asq_id>'
+> ```
+> The `Stage__c` field on `Approved_UseCase__c` maps to UC stages as follows: `3-Evaluating` = U3, `4-Confirming` = U4, `5-Onboarding` = U5, `6-Consuming` = U6. If you need the `Concatenated_Stage_Name__c` value, take the `Use_Case__c` ID returned and run a separate query: `SELECT Id, Concatenated_Stage_Name__c FROM UseCase__c WHERE Id = '<uc_id>'`.
+>
+> If records are returned, use **only these** as the linked use cases — do not broaden the search.
+>
+> **Step 2 — Account-level fallback:** Only if Step 1 returns no results, fall back to querying `UseCase__c` filtered by `Account__c` (e.g. `SELECT Id, Name, Concatenated_Stage_Name__c FROM UseCase__c WHERE Account__c = '<account_id>'`). When using this fallback, report **all** use cases found with their stages — **do not assume the highest-stage use case is the linked one**. Cross-reference the ASQ description/ask to identify the most likely linked use case. If ambiguous, apply the **most conservative (lowest) stage** when evaluating eligibility and flag for user confirmation. Never silently pick a higher-stage use case to qualify an ASQ that may not meet the threshold.
+>
+> **Multiple use cases linked:** When more than one use case is attached to an ASQ (via Step 1 or Step 2), always use the **highest-stage use case** for eligibility evaluation. Stage priority: U6 > U5 > U4 > U3 > U2 > U1. Apply stage-based triage rules against the highest-stage UC found.
+
+If an ASQ has **no use case linked** in the ASQ fields **and** no `UseCase__c` records exist for the account:
 - Update the SFDC activity/chatter feed to inform the requestor using a **structured Salesforce Mention** asking them to attach the relevant use case to the ASQ before it can be triaged.
 - Change the status of the ASQ to **'Under Review'**.
 
@@ -15,12 +31,16 @@ If an ASQ has **no use case linked** in the ASQ fields:
 For any ASQs with attached use case in Validating or Lost stage:
 - Update the SFDC activity/chatter feed to inform the requestor using a **structured Salesforce Mention** stating STS requires use cases to be within U3-U5 stages.
 - Change the status of the ASQs to **'Under Review'**.
-- **Exception:** Workspace setup ASQs can be accepted with use case attached in U2 stage.
+- **Exceptions — ASQ types that can be accepted with use case at U2 stage:**
+  - Workspace Setup & Configuration ASQs
+  - Lakebridge Analyser and Profiler ASQs
 
 ### 3. Validate Workspace Setup ASQs
 For workspace setup ASQs, check if:
 - The workspace type has been specified.
 - The completed workspace checklist based on the cloud (Azure, AWS, or GCP) has been attached to the ASQ.
+
+**Exception:** If the customer has already provisioned a workspace but is unable to launch it (i.e., the workspace exists but is in a failed/broken state), the workspace setup checklist is **not required** — proceed directly to engineer assignment.
 
 If the workspace type is not specified and the workspace checklist is not filled and attached:
 - Update the SFDC activity/chatter feed to inform the requestor using a **structured Salesforce Mention** stating the request does not specify the workspace type and cannot be assigned to an engineer. Include a link to [go/wssetup-cheatsheet](https://sites.google.com/databricks.com/sts-workspace-setup) for reference.
@@ -63,6 +83,7 @@ For ASQs that qualify for STS support, recommend which APJ STS engineer the requ
 - Upcoming planned holidays on engineer calendar.
 - Take into account if the ASQ requestor has requested for a specific engineer.
 - **Sequential/linked ASQs:** When multiple ASQs from the same account are submitted as a phased engagement, note the dependency and assign the same engineer to all phases for continuity.
+- **Re-engagement on completed ASQs:** When an ASQ is identified as a re-engagement on a previously completed ASQ (same account + same use case), recommend the engineer from the prior engagement for continuity. Reference the prior ASQ number in the assignment chatter. Note: re-engagements on the same use case should first be validated via the repeat engagement check in `asq-followup-triage.md` Step 6a before assignment proceeds.
 
 #### Region/Language Rules
 - **Korea** ASQs can be assigned only to **Haley**.
