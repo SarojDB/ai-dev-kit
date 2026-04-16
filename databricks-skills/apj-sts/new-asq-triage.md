@@ -149,3 +149,4 @@ After completing the analysis:
 - Present the full triage results and **ALL** proposed SFDC actions (chatter text, status changes, and @mentions) in a summary table for review.
 - **DO NOT** post any SFDC chatter, update any record status, or send any @mentions until explicit confirmation with **"go ahead"** or **"approved"**.
 - Wait for explicit approval before executing any writes to Salesforce.
+
