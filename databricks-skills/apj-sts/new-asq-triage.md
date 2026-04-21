@@ -1,6 +1,5 @@
 # APJ STS ASQ Triage
 
-Goal: Triage incoming ASQs for the APJ STS Team and respond to requestor for clarification or recommend engineer to assign to. Follow the steps listed below in plan mode.
 
 ## Steps
 
